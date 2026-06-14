@@ -1,2 +1,4 @@
 # Local build artifacts.
 /bin/
+.cogerentor/
+cogerentor.yaml
