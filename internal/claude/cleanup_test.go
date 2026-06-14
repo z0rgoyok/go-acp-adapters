@@ -60,6 +60,40 @@ func TestCleanupActiveSessionPreservesEvidenceWhenKillFailsAndSessionLives(t *te
 	}
 }
 
+func TestCleanupActiveSessionRemovesEvidenceWhenSessionAlreadyDead(t *testing.T) {
+	resetActiveSessions(t)
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "session.stop")
+	markerPath := filepath.Join(dir, "session.marker")
+	if err := os.WriteFile(fifoPath, []byte("fifo"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(markerPath, []byte("marker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session := activeSession{tmuxName: "claude-dead", fifoPath: fifoPath, markerPath: markerPath, claudeSessionID: "s1", cwd: "/work"}
+	registerActiveSession(session)
+
+	cleaned := cleanupActiveSession(context.Background(), session, func(context.Context, string) error {
+		return errors.New("can't find pane")
+	}, func(context.Context, string) bool {
+		return false
+	})
+
+	if !cleaned {
+		t.Fatal("cleanup reported failure for an already-dead session")
+	}
+	if _, err := os.Stat(fifoPath); !os.IsNotExist(err) {
+		t.Fatalf("fifo was not removed: %v", err)
+	}
+	if _, err := os.Stat(markerPath); !os.IsNotExist(err) {
+		t.Fatalf("marker was not removed: %v", err)
+	}
+	if snapshot := activeSessionSnapshot(); len(snapshot) != 0 {
+		t.Fatalf("registry entry was not removed: %+v", snapshot)
+	}
+}
+
 func resetActiveSessions(t *testing.T) {
 	t.Helper()
 	activeSessions.Lock()

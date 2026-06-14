@@ -124,30 +124,38 @@ func (s *TmuxSession) Kill(_ context.Context) error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 
-	var lastErr error
 	if err := s.Interrupt(cleanupCtx); err != nil {
-		lastErr = err
+		if !s.IsAlive(cleanupCtx) {
+			return nil
+		}
+		return err
 	}
 	sleepOrDone(cleanupCtx, 300*time.Millisecond)
 	if err := run(cleanupCtx, "tmux", "send-keys", "-t", s.Name, "/exit", "Enter"); err != nil {
-		lastErr = err
+		if !s.IsAlive(cleanupCtx) {
+			return nil
+		}
+		return err
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if !s.IsAlive(cleanupCtx) {
-			return lastErr
+			return nil
 		}
 		if !sleepOrDone(cleanupCtx, 200*time.Millisecond) {
-			return lastErr
+			return cleanupCtx.Err()
 		}
 	}
 	if s.IsAlive(cleanupCtx) {
 		if err := run(cleanupCtx, "tmux", "kill-session", "-t", s.Name); err != nil {
-			lastErr = err
+			if !s.IsAlive(cleanupCtx) {
+				return nil
+			}
+			return err
 		}
 	}
-	return lastErr
+	return nil
 }
 
 func run(ctx context.Context, name string, args ...string) error {

@@ -213,16 +213,16 @@ func (c *Client) Disconnect(ctx context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.stopReader != nil {
+		c.stopReader.Stop()
+		c.stopReader = nil
+	}
 	if c.tmux != nil {
 		session := activeSession{tmuxName: c.tmux.Name, fifoPath: c.fifoPath, markerPath: c.markerPath, claudeSessionID: c.sessionID, cwd: c.options.WorkingDir}
 		if !cleanupActiveSession(ctx, session, killTmuxSession, tmuxSessionAlive) {
 			return
 		}
 		c.tmux = nil
-	}
-	if c.stopReader != nil {
-		c.stopReader.Stop()
-		c.stopReader = nil
 	}
 	if c.fifoPath != "" {
 		_ = os.Remove(c.fifoPath)
