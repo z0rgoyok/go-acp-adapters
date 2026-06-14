@@ -47,7 +47,10 @@ func homeClaudeProjectRoots() []string {
 
 func findTranscript(ctx context.Context, roots []string, sessionID string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	for {
+		if timeout > 0 && time.Now().After(deadline) {
+			return "", fmt.Errorf("transcript for session %s not found under %v", sessionID, roots)
+		}
 		for _, root := range roots {
 			found := findTranscriptOnce(root, sessionID)
 			if found != "" {
@@ -60,7 +63,6 @@ func findTranscript(ctx context.Context, roots []string, sessionID string, timeo
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	return "", fmt.Errorf("transcript for session %s not found under %v", sessionID, roots)
 }
 
 func findTranscriptOnce(root string, sessionID string) string {

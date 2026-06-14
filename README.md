@@ -60,6 +60,10 @@ The server reads newline-delimited ACP JSON-RPC messages from stdin and writes
 responses and notifications to stdout. Diagnostics go to stderr, so stdout stays
 reserved for protocol messages.
 
+ACP mode uses the caller's request context for prompt deadlines and
+cancellation. The adapter does not install its own prompt-turn timeout in server
+mode.
+
 ## Direct Claude transport smoke
 
 Use the `query` subcommand to exercise the Claude transport without an ACP
@@ -84,11 +88,17 @@ echo "Reply with exactly one word: OK" | go run ./cmd/claude-acp-adapter query
 `query` flags:
 
 ```text
--cwd      working directory for Claude
--model    Claude model
--prompt   prompt text; stdin is used when empty
--timeout  query timeout, default 90s
+-cwd                    working directory for Claude
+-model                  Claude model
+-prompt                 prompt text; stdin is used when empty
+-timeout                query timeout, default 90s
+-tool-events            tool event update mode: off, compact, full
+-tool-input-max-bytes   max bytes kept from tool input in ACP updates
+-tool-result-max-bytes  max bytes kept from tool result in ACP updates
 ```
+
+The `query` subcommand keeps its own default timeout because it is a standalone
+developer smoke tool.
 
 ## Architecture
 
@@ -119,14 +129,27 @@ The current implementation provides:
 - ACP stdio server mode by default;
 - `initialize`, `session/new`, `session/prompt`, `session/cancel`, and
   `session/close`;
+- caller-owned ACP prompt timeout and cancellation through request context;
 - text and resource-link prompt blocks;
 - stdio MCP server forwarding through `--mcp-config`;
 - direct transport smoke through the `query` subcommand;
 - interactive Claude Code launch through `tmux`;
 - prompt turn updates through transcript events;
 - assistant text extraction from transcript JSONL;
+- SDK-safe `session/new.configOptions` using advertised `select` options for
+  `model`, `effort`, `mode`, and `toolEvents`;
 - unit tests for ACP mapping, session orchestration, transcript parsing, FIFO
   setup, quoting, and settings JSON.
+
+Numeric tool payload limits are process-level settings. They are available as
+environment variables and CLI flags, and are intentionally not advertised in
+`session/new.configOptions`:
+
+```text
+CLAUDE_ACP_TOOL_EVENTS             --tool-events
+CLAUDE_ACP_TOOL_INPUT_MAX_BYTES    --tool-input-max-bytes
+CLAUDE_ACP_TOOL_RESULT_MAX_BYTES   --tool-result-max-bytes
+```
 
 ## Development commands
 

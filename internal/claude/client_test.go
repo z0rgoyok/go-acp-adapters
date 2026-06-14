@@ -11,6 +11,26 @@ import (
 	"time"
 )
 
+func TestNewClientStoresZeroTimeoutAsCallerOwned(t *testing.T) {
+	client, err := NewClient(Options{Timeout: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.options.Timeout != 0 {
+		t.Fatalf("Timeout = %v, want 0 (caller-owned)", client.options.Timeout)
+	}
+}
+
+func TestNewClientStoresPositiveTimeout(t *testing.T) {
+	client, err := NewClient(Options{Timeout: 90 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.options.Timeout != 90*time.Second {
+		t.Fatalf("Timeout = %v, want 90s", client.options.Timeout)
+	}
+}
+
 func TestSettingsJSONContainsStopHook(t *testing.T) {
 	client := &Client{fifoPath: "/tmp/path with spaces/test.stop", turnPath: "/tmp/path with spaces/test.turn"}
 

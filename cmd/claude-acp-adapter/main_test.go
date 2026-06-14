@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -74,6 +75,38 @@ func TestACPModeCancelsBackToBackPromptWithFakeTransport(t *testing.T) {
 	readStopReason(t, client.read(t), "cancelled")
 	if !fake.isCancelled() {
 		t.Fatal("transport was not cancelled")
+	}
+}
+
+func TestQueryModeDefaultTimeoutIs90s(t *testing.T) {
+	flags := flag.NewFlagSet("query", flag.ContinueOnError)
+	flags.SetOutput(&bytes.Buffer{})
+	var timeout time.Duration
+	flags.DurationVar(&timeout, "timeout", 90*time.Second, "query timeout")
+	if err := flags.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	if timeout != 90*time.Second {
+		t.Fatalf("default timeout = %v, want 90s", timeout)
+	}
+}
+
+func TestQueryModeParsesCustomTimeout(t *testing.T) {
+	flags := flag.NewFlagSet("query", flag.ContinueOnError)
+	flags.SetOutput(&bytes.Buffer{})
+	var timeout time.Duration
+	flags.DurationVar(&timeout, "timeout", 90*time.Second, "query timeout")
+	if err := flags.Parse([]string{"--timeout", "5m"}); err != nil {
+		t.Fatal(err)
+	}
+	if timeout != 5*time.Minute {
+		t.Fatalf("custom timeout = %v, want 5m", timeout)
+	}
+}
+
+func TestACPModeDoesNotSetDefaultTimeout(t *testing.T) {
+	if serviceOptions.Timeout != 0 {
+		t.Fatalf("serviceOptions.Timeout = %v, want 0 (caller-owned) before ACP mode", serviceOptions.Timeout)
 	}
 }
 

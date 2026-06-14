@@ -132,27 +132,3 @@ func TestToolEventsOption(t *testing.T) {
 		t.Fatalf("currentValue = %s, want compact", opt.CurrentValue)
 	}
 }
-
-func TestToolInputMaxBytesOption(t *testing.T) {
-	cfg := SessionConfig{ToolInputMaxBytes: 4096}
-	opt := toolInputMaxBytesOption(cfg)
-	if opt.ID != "toolInputMaxBytes" || opt.Type != "number" {
-		t.Fatalf("option = %+v", opt)
-	}
-	var current int
-	if err := json.Unmarshal(opt.CurrentValue, &current); err != nil || current != 4096 {
-		t.Fatalf("currentValue = %s, want 4096", opt.CurrentValue)
-	}
-}
-
-func TestToolResultMaxBytesOption(t *testing.T) {
-	cfg := SessionConfig{ToolResultMaxBytes: 8192}
-	opt := toolResultMaxBytesOption(cfg)
-	if opt.ID != "toolResultMaxBytes" || opt.Type != "number" {
-		t.Fatalf("option = %+v", opt)
-	}
-	var current int
-	if err := json.Unmarshal(opt.CurrentValue, &current); err != nil || current != 8192 {
-		t.Fatalf("currentValue = %s, want 8192", opt.CurrentValue)
-	}
-}

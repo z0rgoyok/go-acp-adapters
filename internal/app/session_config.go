@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"strings"
 	"time"
 
@@ -55,8 +54,6 @@ func (c SessionConfig) options() []acp.SessionConfigOption {
 		selectOption(configIDEffort, "Reasoning effort", "thought_level", c.Effort, []string{"low", "medium", "high"}),
 		selectOption(configIDMode, "Mode", "mode", c.Mode, []string{"auto"}),
 		toolEventsOption(c),
-		toolInputMaxBytesOption(c),
-		toolResultMaxBytesOption(c),
 	}
 }
 
@@ -92,20 +89,6 @@ func toolEventsOption(c SessionConfig) acp.SessionConfigOption {
 			{Name: "Compact", Value: "compact"},
 			{Name: "Full", Value: "full"},
 		},
-	}
-}
-
-func toolInputMaxBytesOption(c SessionConfig) acp.SessionConfigOption {
-	return acp.SessionConfigOption{
-		Type: "number", ID: configIDToolInputMaxBytes, Name: "Tool input max bytes", Category: "tool",
-		CurrentValue: json.RawMessage(strconv.FormatInt(int64(c.ToolInputMaxBytes), 10)),
-	}
-}
-
-func toolResultMaxBytesOption(c SessionConfig) acp.SessionConfigOption {
-	return acp.SessionConfigOption{
-		Type: "number", ID: configIDToolResultMaxBytes, Name: "Tool result max bytes", Category: "tool",
-		CurrentValue: json.RawMessage(strconv.FormatInt(int64(c.ToolResultMaxBytes), 10)),
 	}
 }
 

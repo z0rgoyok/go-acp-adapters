@@ -40,9 +40,7 @@ func NewClient(options Options) (*Client, error) {
 	if options.PermissionMode == "" {
 		options.PermissionMode = "bypassPermissions"
 	}
-	if options.Timeout == 0 {
-		options.Timeout = 90 * time.Second
-	}
+
 	return &Client{options: options}, nil
 }
 
@@ -146,7 +144,13 @@ func (c *Client) runTurn(ctx context.Context, prompt string, events chan<- Trans
 	transcript := &c.transcript
 	c.mu.Unlock()
 
-	queryCtx, cancel := context.WithTimeout(ctx, timeout)
+	var queryCtx context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		queryCtx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		queryCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 
 	promptSent := false
@@ -171,7 +175,7 @@ func (c *Client) runTurn(ctx context.Context, prompt string, events chan<- Trans
 	}
 	promptSent = true
 
-	path, err = waitForTranscript(queryCtx, stopReader, configDir, sessionID, turn)
+	path, err = waitForTranscript(queryCtx, stopReader, configDir, sessionID, turn, timeout)
 	if err != nil {
 		return Response{}, err
 	}

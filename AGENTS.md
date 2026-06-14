@@ -19,6 +19,12 @@ ACP request -> app orchestration -> tmux -> interactive claude CLI -> JSONL tran
 Use this as context for the existing code shape. New features should be added
 through clear package boundaries that match their domain responsibility.
 
+ACP mode is caller-owned for prompt deadlines. Do not add default prompt-turn
+timeouts inside `internal/app` or `internal/claude` for ACP traffic; propagate
+context cancellation and deadlines from the ACP request chain. The `query`
+subcommand is the standalone developer smoke path and keeps its own local
+timeout default.
+
 ## Development Rules
 
 - Keep Go/source files under 300 lines.
@@ -47,6 +53,8 @@ through clear package boundaries that match their domain responsibility.
 - `internal/claude/fifo.go` — Stop hook FIFO handling.
 - `internal/claude/session.go` — transcript discovery.
 - `internal/claude/types.go` — public transport types.
+- `docs/acp-local-usage.md` — local ACP usage, timeout ownership, and
+  compatibility notes.
 
 ## Development Commands
 
@@ -79,6 +87,11 @@ When adding a new capability, first identify the layer it belongs to:
 - Claude transport: launching Claude, sending prompts, reading transcript state.
 - ACP protocol: sessions, requests, responses, cancellation, and protocol errors.
 - Orchestration: mapping protocol requests to Claude transport operations.
+
+`session/new.configOptions` should stay compatible with the production ACP SDK.
+Advertise select-style options for interactive client controls. Keep numeric
+tool payload limits as process-level settings through environment variables or
+CLI flags unless the SDK contract explicitly supports numeric config options.
 
 ## Testing Guidance
 

@@ -48,9 +48,7 @@ func NewService(options Options) *Service {
 	if factory == nil {
 		factory = NewClaudeTransport
 	}
-	if options.Timeout == 0 {
-		options.Timeout = 90 * time.Second
-	}
+
 	toolCfg := options.ToolCfg
 	if toolCfg.ToolEvents == "" {
 		toolCfg = DefaultToolObservabilityConfig()

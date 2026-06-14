@@ -24,12 +24,43 @@ func TestACPProcessRunsBaselineLifecycleWithFakeTransport(t *testing.T) {
 	client.write(t, `{"id":1,"method":"initialize","params":{"protocolVersion":1}}`)
 	readResult(t, client.read(t), "result")
 	client.write(t, fmt.Sprintf(`{"id":2,"method":"session/new","params":{"cwd":%q}}`, t.TempDir()))
-	sessionID := readSessionID(t, client.read(t))
+	message := client.read(t)
+	result := readResult(t, message, "result")
+	sessionID, ok := result["sessionId"].(string)
+	if !ok || sessionID == "" {
+		t.Fatalf("message = %+v", message)
+	}
+	assertConfigOptionsSDKSafe(t, result)
 	client.write(t, fmt.Sprintf(`{"id":3,"method":"session/prompt","params":{"sessionId":%q,"prompt":[{"type":"text","text":"hi"}]}}`, sessionID))
 	readMethod(t, client.read(t), "session/update")
 	readStopReason(t, client.read(t), "end_turn")
 	client.write(t, fmt.Sprintf(`{"id":4,"method":"session/close","params":{"sessionId":%q}}`, sessionID))
 	readResult(t, client.read(t), "result")
+}
+
+func assertConfigOptionsSDKSafe(t *testing.T, result map[string]any) {
+	t.Helper()
+	configOptions, ok := result["configOptions"].([]any)
+	if !ok {
+		t.Fatalf("configOptions not found in result or not an array: %+v", result)
+	}
+	forbiddenIDs := map[string]bool{"toolInputMaxBytes": true, "toolResultMaxBytes": true}
+	for _, opt := range configOptions {
+		o := opt.(map[string]any)
+		if o["type"] != "select" {
+			t.Fatalf("option id=%q has type=%q, want \"select\"", o["id"], o["type"])
+		}
+		if _, ok := o["currentValue"].(string); !ok {
+			t.Fatalf("option id=%q currentValue=%T is not a string", o["id"], o["currentValue"])
+		}
+		opts, ok := o["options"].([]any)
+		if !ok || len(opts) == 0 {
+			t.Fatalf("option id=%q options is empty or not an array", o["id"])
+		}
+		if id, ok := o["id"].(string); ok && forbiddenIDs[id] {
+			t.Fatalf("option id=%q must not be advertised in configOptions", id)
+		}
+	}
 }
 
 func TestACPProcessAcceptsSessionModelConfigurationWithFakeTransport(t *testing.T) {

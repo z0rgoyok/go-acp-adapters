@@ -46,17 +46,9 @@ func (s *TmuxSession) launchArgs(claudeArgs []string) []string {
 }
 
 func (s *TmuxSession) WaitReady(ctx context.Context) error {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
-		defer cancel()
-		deadline, _ = ctx.Deadline()
-	}
-
 	var last string
 	stable := 0
-	for time.Now().Before(deadline) {
+	for {
 		out, err := output(ctx, "tmux", "capture-pane", "-p", "-t", s.Name)
 		if err == nil {
 			ready := strings.Contains(out, "❯") &&
@@ -81,7 +73,6 @@ func (s *TmuxSession) WaitReady(ctx context.Context) error {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("claude prompt did not become ready: %q", trimForError(last))
 }
 
 func (s *TmuxSession) PastePrompt(ctx context.Context, sessionID string, prompt string) error {
@@ -186,14 +177,6 @@ func requireExecutable(name string) error {
 	}
 	_, err := exec.LookPath(name)
 	return err
-}
-
-func trimForError(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) <= 240 {
-		return value
-	}
-	return value[:240]
 }
 
 func sleepOrDone(ctx context.Context, duration time.Duration) bool {

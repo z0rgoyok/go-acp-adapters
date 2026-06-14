@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"claude-acp-adapter/internal/acp"
 	"claude-acp-adapter/internal/claude"
@@ -86,23 +87,55 @@ func TestNewSessionReturnsMinimumSessionConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(response.ConfigOptions) != 6 {
+	if len(response.ConfigOptions) != 4 {
 		t.Fatalf("config options = %+v", response.ConfigOptions)
 	}
-	wantCategories := map[string]string{"model": "model", "effort": "thought_level", "mode": "mode", "toolEvents": "tool", "toolInputMaxBytes": "tool", "toolResultMaxBytes": "tool"}
+	wantCategories := map[string]string{"model": "model", "effort": "thought_level", "mode": "mode", "toolEvents": "tool"}
 	for _, option := range response.ConfigOptions {
 		if wantCategories[option.ID] != option.Category || option.Type != "select" || len(option.Options) == 0 {
-			if option.ID == "toolInputMaxBytes" || option.ID == "toolResultMaxBytes" {
-				if option.Type != "number" || len(option.Options) != 0 {
-					t.Fatalf("option = %+v", option)
-				}
-				continue
-			}
 			t.Fatalf("option = %+v", option)
 		}
 	}
 	if response.Modes == nil || response.Modes.CurrentModeID != "auto" || len(response.Modes.AvailableModes) != 1 || response.Modes.AvailableModes[0].ID != "auto" {
 		t.Fatalf("modes = %+v", response.Modes)
+	}
+}
+
+func TestNewSessionConfigOptionsAreSDKSafe(t *testing.T) {
+	service := NewService(Options{Factory: fakeFactory(nil)})
+
+	response, err := service.NewSession(context.Background(), acp.NewSessionRequest{Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	configOptions, ok := wire["configOptions"].([]any)
+	if !ok {
+		t.Fatalf("configOptions not found in response: %s", data)
+	}
+	for _, opt := range configOptions {
+		o := opt.(map[string]any)
+		if o["type"] != "select" {
+			t.Fatalf("option id=%q has type=%q, want \"select\"", o["id"], o["type"])
+		}
+		if _, ok := o["currentValue"].(string); !ok {
+			t.Fatalf("option id=%q currentValue=%T is not a string", o["id"], o["currentValue"])
+		}
+		opts, ok := o["options"].([]any)
+		if !ok || len(opts) == 0 {
+			t.Fatalf("option id=%q options is empty or not an array", o["id"])
+		}
+		forbiddenIDs := map[string]bool{"toolInputMaxBytes": true, "toolResultMaxBytes": true}
+		if _, ok := o["id"].(string); ok && forbiddenIDs[o["id"].(string)] {
+			t.Fatalf("option id=%q must not be advertised in configOptions", o["id"])
+		}
 	}
 }
 
@@ -292,6 +325,32 @@ func TestCancelFailureDoesNotReportCancelledPrompt(t *testing.T) {
 	err := <-done
 	if err == nil || !strings.Contains(err.Error(), "cancellation failure") {
 		t.Fatalf("prompt err = %v", err)
+	}
+}
+
+func TestNewServiceDefaultTimeoutIsZero(t *testing.T) {
+	service := NewService(Options{Factory: fakeFactory(nil)})
+	if service.timeout != 0 {
+		t.Fatalf("NewService(Options{}).timeout = %v, want 0 (caller-owned)", service.timeout)
+	}
+}
+
+func TestNewServicePropagatesTimeout(t *testing.T) {
+	var captured time.Duration
+	service := NewService(Options{
+		Factory: func(opts TransportOptions) (Transport, error) {
+			captured = opts.Timeout
+			return &fakeTransport{}, nil
+		},
+		Timeout: 5 * time.Minute,
+	})
+	session, ok := service.registry.Get(mustSession(t, service))
+	if !ok {
+		t.Fatal("session not found")
+	}
+	_ = session
+	if captured != 5*time.Minute {
+		t.Fatalf("TransportOptions.Timeout = %v, want 5m", captured)
 	}
 }
 
