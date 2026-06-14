@@ -177,8 +177,8 @@ func TestServerDispatchesSetSessionConfigOption(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Error != nil || backend.configID != "effort" || backend.configValue != "high" {
-		t.Fatalf("response = %+v, config = %q/%q", response, backend.configID, backend.configValue)
+	if response.Error != nil || backend.configID != "effort" || string(backend.configValue) != `"high"` {
+		t.Fatalf("response = %+v, config = %q/%s", response, backend.configID, backend.configValue)
 	}
 }
 
@@ -205,7 +205,7 @@ type fakeBackend struct {
 	mcpServers  []McpServer
 	modelID     string
 	configID    string
-	configValue string
+	configValue json.RawMessage
 }
 
 func (f *fakeBackend) Initialize(_ context.Context, request InitializeRequest) (InitializeResponse, error) {
@@ -233,7 +233,8 @@ func (f *fakeBackend) SetSessionConfigOption(_ context.Context, request SetSessi
 
 func (f *fakeBackend) Prompt(_ context.Context, request PromptRequest, notifier Notifier) (PromptResponse, error) {
 	if f.promptText != "" {
-		_ = notifier.SessionUpdate(SessionUpdateParams{SessionID: request.SessionID, Update: SessionUpdate{SessionUpdate: "agent_message_chunk", MessageID: f.messageID, Content: ContentBlock{Type: "text", Text: f.promptText}}})
+		content, _ := json.Marshal(ContentBlock{Type: "text", Text: f.promptText})
+		_ = notifier.SessionUpdate(SessionUpdateParams{SessionID: request.SessionID, Update: SessionUpdate{SessionUpdate: "agent_message_chunk", MessageID: f.messageID, Content: content}})
 	}
 	return PromptResponse{StopReason: "end_turn"}, nil
 }

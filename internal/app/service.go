@@ -46,7 +46,7 @@ func (s *Service) NewSession(ctx context.Context, request acp.NewSessionRequest)
 	if mcpPath != "" {
 		extraArgs = append(extraArgs, "--mcp-config", mcpPath)
 	}
-	config := newSessionConfig(s.model)
+	config := newSessionConfig(s.model, s.toolCfg)
 	transport, err := s.factory(TransportOptions{WorkingDir: request.Cwd, Model: config.Model, Timeout: s.timeout, ExtraArgs: extraArgs})
 	if err != nil {
 		removeFile(mcpPath)
@@ -114,7 +114,7 @@ func (t *PromptTurn) Run(_ context.Context, notifier acp.Notifier) (acp.PromptRe
 
 	stream := t.session.Transport.StartTurn(t.ctx, t.prompt)
 	for event := range stream.Events {
-		update, ok := updateFromTranscriptEvent(event)
+		update, ok := updateFromTranscriptEvent(event, t.session.Config)
 		if !ok {
 			continue
 		}

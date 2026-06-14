@@ -11,6 +11,24 @@ import (
 	"claude-acp-adapter/internal/claude"
 )
 
+func TestToolConfigDefaultsInNewSession(t *testing.T) {
+	service := NewService(Options{Factory: fakeFactory(nil)})
+	sessionID := mustSession(t, service)
+	session, ok := service.registry.Get(sessionID)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if session.Config.ToolEvents != ToolEventsCompact {
+		t.Fatalf("ToolEvents = %q", session.Config.ToolEvents)
+	}
+	if session.Config.ToolInputMaxBytes != 4096 {
+		t.Fatalf("ToolInputMaxBytes = %d", session.Config.ToolInputMaxBytes)
+	}
+	if session.Config.ToolResultMaxBytes != 8192 {
+		t.Fatalf("ToolResultMaxBytes = %d", session.Config.ToolResultMaxBytes)
+	}
+}
+
 func TestInitializeReturnsACPv1CapabilityShape(t *testing.T) {
 	service := NewService(Options{Factory: fakeFactory(nil)})
 
@@ -68,12 +86,18 @@ func TestNewSessionReturnsMinimumSessionConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(response.ConfigOptions) != 3 {
+	if len(response.ConfigOptions) != 6 {
 		t.Fatalf("config options = %+v", response.ConfigOptions)
 	}
-	wantCategories := map[string]string{"model": "model", "effort": "thought_level", "mode": "mode"}
+	wantCategories := map[string]string{"model": "model", "effort": "thought_level", "mode": "mode", "toolEvents": "tool", "toolInputMaxBytes": "tool", "toolResultMaxBytes": "tool"}
 	for _, option := range response.ConfigOptions {
 		if wantCategories[option.ID] != option.Category || option.Type != "select" || len(option.Options) == 0 {
+			if option.ID == "toolInputMaxBytes" || option.ID == "toolResultMaxBytes" {
+				if option.Type != "number" || len(option.Options) != 0 {
+					t.Fatalf("option = %+v", option)
+				}
+				continue
+			}
 			t.Fatalf("option = %+v", option)
 		}
 	}
@@ -120,9 +144,9 @@ func TestSetSessionConfigOptionAcceptsMinimumConfig(t *testing.T) {
 	sessionID := mustSession(t, service)
 
 	for _, request := range []acp.SetSessionConfigOptionRequest{
-		{SessionID: sessionID, ConfigID: "model", Value: "claude-sonnet-4-6"},
-		{SessionID: sessionID, ConfigID: "effort", Value: "high"},
-		{SessionID: sessionID, ConfigID: "mode", Value: "auto"},
+		{SessionID: sessionID, ConfigID: "model", Value: json.RawMessage(`"claude-sonnet-4-6"`)},
+		{SessionID: sessionID, ConfigID: "effort", Value: json.RawMessage(`"high"`)},
+		{SessionID: sessionID, ConfigID: "mode", Value: json.RawMessage(`"auto"`)},
 	} {
 		if _, err := service.SetSessionConfigOption(context.Background(), request); err != nil {
 			t.Fatalf("%+v: %v", request, err)
@@ -141,7 +165,7 @@ func TestSetSessionConfigOptionRejectsActivePromptMutation(t *testing.T) {
 		close(done)
 	}()
 	fake.waitQuery(t)
-	_, err := service.SetSessionConfigOption(context.Background(), acp.SetSessionConfigOptionRequest{SessionID: sessionID, ConfigID: "effort", Value: "high"})
+	_, err := service.SetSessionConfigOption(context.Background(), acp.SetSessionConfigOptionRequest{SessionID: sessionID, ConfigID: "effort", Value: json.RawMessage(`"high"`)})
 	if err == nil || !strings.Contains(err.Error(), "active prompt") {
 		t.Fatalf("err = %v", err)
 	}
@@ -165,8 +189,12 @@ func TestPromptSendsUpdateAndStopReason(t *testing.T) {
 	if fake.prompt != "hi" {
 		t.Fatalf("prompt = %q", fake.prompt)
 	}
-	if len(notifier.updates) != 1 || notifier.updates[0].Update.SessionUpdate != "agent_message_chunk" || notifier.updates[0].Update.Content.Text != "hello" || notifier.updates[0].Update.MessageID != "msg-1" {
+	if len(notifier.updates) != 1 || notifier.updates[0].Update.SessionUpdate != "agent_message_chunk" || notifier.updates[0].Update.MessageID != "msg-1" {
 		t.Fatalf("updates = %+v", notifier.updates)
+	}
+	var content struct{ Text string }
+	if err := json.Unmarshal(notifier.updates[0].Update.Content, &content); err != nil || content.Text != "hello" {
+		t.Fatalf("content = %+v", notifier.updates[0].Update.Content)
 	}
 }
 
@@ -191,13 +219,20 @@ func TestPromptStreamsMultipleTranscriptTextEvents(t *testing.T) {
 	if response.StopReason != acp.StopReasonEndTurn {
 		t.Fatalf("stop reason = %q", response.StopReason)
 	}
-	if len(notifier.updates) != 2 {
+	if len(notifier.updates) != 4 {
 		t.Fatalf("updates = %+v", notifier.updates)
 	}
-	for i, want := range []string{"one", "two"} {
-		if notifier.updates[i].Update.Content.Text != want || notifier.updates[i].Update.MessageID != "msg-1" {
-			t.Fatalf("update[%d] = %+v", i, notifier.updates[i])
-		}
+	if notifier.updates[0].Update.SessionUpdate != "agent_message_chunk" || notifier.updates[0].Update.MessageID != "msg-1" {
+		t.Fatalf("update[0] = %+v", notifier.updates[0])
+	}
+	if notifier.updates[1].Update.SessionUpdate != "tool_call" || notifier.updates[1].Update.ToolCallID != "tool-1" || notifier.updates[1].Update.Kind != "Read" || notifier.updates[1].Update.Status != "started" {
+		t.Fatalf("update[1] = %+v", notifier.updates[1])
+	}
+	if notifier.updates[2].Update.SessionUpdate != "tool_call_update" || notifier.updates[2].Update.ToolCallID != "tool-1" || notifier.updates[2].Update.Status != "completed" {
+		t.Fatalf("update[2] = %+v", notifier.updates[2])
+	}
+	if notifier.updates[3].Update.SessionUpdate != "agent_message_chunk" || notifier.updates[3].Update.MessageID != "msg-1" {
+		t.Fatalf("update[3] = %+v", notifier.updates[3])
 	}
 }
 

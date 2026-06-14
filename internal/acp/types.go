@@ -1,5 +1,7 @@
 package acp
 
+import "encoding/json"
+
 const ProtocolVersion uint16 = 1
 
 type Implementation struct {
@@ -71,7 +73,7 @@ type SessionConfigOption struct {
 	ID           string                      `json:"id"`
 	Name         string                      `json:"name"`
 	Category     string                      `json:"category,omitempty"`
-	CurrentValue string                      `json:"currentValue"`
+	CurrentValue json.RawMessage             `json:"currentValue"`
 	Options      []SessionConfigSelectOption `json:"options"`
 }
 
@@ -98,9 +100,9 @@ type SetSessionModelRequest struct {
 type SetSessionModelResponse struct{}
 
 type SetSessionConfigOptionRequest struct {
-	SessionID string `json:"sessionId"`
-	ConfigID  string `json:"configId"`
-	Value     string `json:"value"`
+	SessionID string          `json:"sessionId"`
+	ConfigID  string          `json:"configId"`
+	Value     json.RawMessage `json:"value"`
 }
 
 type SetSessionConfigOptionResponse struct{}
@@ -159,7 +161,15 @@ type SessionUpdateParams struct {
 }
 
 type SessionUpdate struct {
-	SessionUpdate string       `json:"sessionUpdate"`
-	MessageID     string       `json:"messageId,omitempty"`
-	Content       ContentBlock `json:"content"`
+	SessionUpdate string          `json:"sessionUpdate"`
+	MessageID     string          `json:"messageId,omitempty"`
+	Content       json.RawMessage `json:"content,omitempty"`
+	ToolCallID    string          `json:"toolCallId,omitempty"`
+	Title         string          `json:"title,omitempty"`
+	Kind          string          `json:"kind,omitempty"`
+	Status        string          `json:"status,omitempty"`
+	Input         json.RawMessage `json:"input,omitempty"`
+	IsError       *bool           `json:"isError,omitempty"`
+	Truncated     bool            `json:"truncated,omitempty"`
+	OriginalBytes int             `json:"originalBytes,omitempty"`
 }

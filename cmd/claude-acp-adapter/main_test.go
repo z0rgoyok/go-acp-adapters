@@ -200,6 +200,7 @@ type cmdFakeTransport struct {
 	cancelled    bool
 	disconnected bool
 	block        chan struct{}
+	streamEvents []claude.TranscriptEvent
 }
 
 func (f *cmdFakeTransport) Connect(context.Context) error { return nil }
@@ -221,16 +222,28 @@ func (f *cmdFakeTransport) StartTurn(ctx context.Context, prompt string) claude.
 	go func() {
 		defer close(events)
 		response, err := f.Query(ctx, prompt)
-		for _, message := range response.Messages {
-			if strings.TrimSpace(message.Text) == "" {
-				continue
+		if f.streamEvents != nil {
+			for _, event := range f.streamEvents {
+				select {
+				case events <- event:
+				case <-ctx.Done():
+					done <- claude.TurnResult{Response: response, Err: ctx.Err()}
+					close(done)
+					return
+				}
 			}
-			select {
-			case events <- claude.AssistantTextEvent{MessageID: message.MessageID, Text: message.Text, StopReason: message.StopReason}:
-			case <-ctx.Done():
-				done <- claude.TurnResult{Response: response, Err: ctx.Err()}
-				close(done)
-				return
+		} else {
+			for _, message := range response.Messages {
+				if strings.TrimSpace(message.Text) == "" {
+					continue
+				}
+				select {
+				case events <- claude.AssistantTextEvent{MessageID: message.MessageID, Text: message.Text, StopReason: message.StopReason}:
+				case <-ctx.Done():
+					done <- claude.TurnResult{Response: response, Err: ctx.Err()}
+					close(done)
+					return
+				}
 			}
 		}
 		done <- claude.TurnResult{Response: response, Err: err}

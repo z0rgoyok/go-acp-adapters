@@ -32,6 +32,7 @@ type Service struct {
 	factory  TransportFactory
 	model    string
 	timeout  time.Duration
+	toolCfg  ToolObservabilityConfig
 	closing  bool
 }
 
@@ -39,6 +40,7 @@ type Options struct {
 	Factory TransportFactory
 	Model   string
 	Timeout time.Duration
+	ToolCfg ToolObservabilityConfig
 }
 
 func NewService(options Options) *Service {
@@ -49,11 +51,16 @@ func NewService(options Options) *Service {
 	if options.Timeout == 0 {
 		options.Timeout = 90 * time.Second
 	}
+	toolCfg := options.ToolCfg
+	if toolCfg.ToolEvents == "" {
+		toolCfg = DefaultToolObservabilityConfig()
+	}
 	return &Service{
 		registry: NewRegistry(),
 		factory:  factory,
 		model:    options.Model,
 		timeout:  options.Timeout,
+		toolCfg:  toolCfg,
 	}
 }
 

@@ -73,13 +73,71 @@ func TestACPProcessSIGTERMDisconnectsOpenSessionWithFakeTransport(t *testing.T) 
 	}
 }
 
+func TestACPProcessWithToolEvents(t *testing.T) {
+	client := startACPProcess(t, "toolstream")
+	defer client.close(t)
+
+	client.write(t, `{"id":1,"method":"initialize","params":{"protocolVersion":1}}`)
+	readResult(t, client.read(t), "result")
+	client.write(t, fmt.Sprintf(`{"id":2,"method":"session/new","params":{"cwd":%q}}`, t.TempDir()))
+	sessionID := readSessionID(t, client.read(t))
+	client.write(t, fmt.Sprintf(`{"id":3,"method":"session/prompt","params":{"sessionId":%q,"prompt":[{"type":"text","text":"hi"}]}}`, sessionID))
+
+	m1 := client.read(t)
+	if m1["method"] != "session/update" {
+		t.Fatalf("expected session/update, got %+v", m1)
+	}
+	params1, _ := m1["params"].(map[string]any)
+	update1, _ := params1["update"].(map[string]any)
+	if update1["sessionUpdate"] != "agent_message_chunk" {
+		t.Fatalf("expected agent_message_chunk, got %+v", update1)
+	}
+
+	m2 := client.read(t)
+	params2, _ := m2["params"].(map[string]any)
+	update2, _ := params2["update"].(map[string]any)
+	if update2["sessionUpdate"] != "tool_call" || update2["toolCallId"] != "tool-1" || update2["kind"] != "Read" || update2["status"] != "started" {
+		t.Fatalf("expected tool_call, got %+v", update2)
+	}
+
+	m3 := client.read(t)
+	params3, _ := m3["params"].(map[string]any)
+	update3, _ := params3["update"].(map[string]any)
+	if update3["sessionUpdate"] != "tool_call_update" || update3["toolCallId"] != "tool-1" || update3["status"] != "completed" {
+		t.Fatalf("expected tool_call_update, got %+v", update3)
+	}
+
+	m4 := client.read(t)
+	params4, _ := m4["params"].(map[string]any)
+	update4, _ := params4["update"].(map[string]any)
+	if update4["sessionUpdate"] != "agent_message_chunk" {
+		t.Fatalf("expected agent_message_chunk, got %+v", update4)
+	}
+
+	readStopReason(t, client.read(t), "end_turn")
+}
+
 func TestACPSubprocessHelper(t *testing.T) {
 	if os.Getenv("CLAUDE_ACP_ADAPTER_TEST_HELPER") != "1" {
 		return
 	}
 	transport := &cmdFakeTransport{response: claude.Response{Text: "hello", Messages: []claude.AssistantMessage{{Text: "hello", StopReason: "end_turn"}}}}
-	if os.Getenv("CLAUDE_ACP_ADAPTER_TEST_MODE") == "cancel" {
+	switch os.Getenv("CLAUDE_ACP_ADAPTER_TEST_MODE") {
+	case "cancel":
 		transport = &cmdFakeTransport{block: make(chan struct{})}
+	case "toolstream":
+		transport = &cmdFakeTransport{
+			streamEvents: []claude.TranscriptEvent{
+				claude.AssistantTextEvent{MessageID: "msg-1", Text: "I'll inspect it."},
+				claude.AssistantToolUseEvent{ToolUseID: "tool-1", Name: "Read", Input: json.RawMessage(`{"file_path":"/tmp/a.txt"}`)},
+				claude.ToolResultEvent{ToolUseID: "tool-1", Content: json.RawMessage(`"file contents"`), IsError: false},
+				claude.AssistantTextEvent{MessageID: "msg-1", Text: "Done.", StopReason: "end_turn"},
+			},
+			response: claude.Response{
+				Text:     "I'll inspect it.\nDone.",
+				Messages: []claude.AssistantMessage{{Text: "I'll inspect it.", MessageID: "msg-1"}, {Text: "Done.", MessageID: "msg-1", StopReason: "end_turn"}},
+			},
+		}
 	}
 	serviceOptions = app.Options{Factory: func(app.TransportOptions) (app.Transport, error) { return transport, nil }}
 	if err := run(nil, os.Stdin, os.Stdout, os.Stderr); err != nil {

@@ -26,6 +26,11 @@ func main() {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	var err error
+	serviceOptions.ToolCfg, err = loadToolConfig(args)
+	if err != nil {
+		return err
+	}
 	if len(args) > 0 && args[0] == "query" {
 		return runQuery(args[1:], stdin, stdout)
 	}
