@@ -37,60 +37,120 @@ func updateFromTranscriptEvent(event claude.TranscriptEvent, cfg SessionConfig) 
 			input = truncateJSONPreview(input, cfg.ToolPayloadHardMax)
 			truncated = true
 		}
+		meta := make(map[string]any)
+		if truncated {
+			meta["truncated"] = true
+			meta["originalBytes"] = originalBytes
+		}
 		return acp.SessionUpdate{
 			SessionUpdate: "tool_call",
 			ToolCallID:    e.ToolUseID,
 			Title:         buildToolTitle(e),
-			Kind:          e.Name,
-			Status:        "started",
-			Input:         input,
-			Truncated:     truncated,
-			OriginalBytes: originalBytes,
+			Kind:          toolKind(e.Name),
+			Status:        acp.ToolCallStatusPending,
+			RawInput:      input,
+			Meta:          meta,
 		}, true
 
 	case claude.ToolResultEvent:
 		if cfg.ToolEvents == ToolEventsOff {
 			return acp.SessionUpdate{}, false
 		}
-		var content json.RawMessage
+		var contentStr string
+		var rawOutput json.RawMessage
 		originalBytes := 0
 		truncated := false
 
 		if cfg.ToolEvents == ToolEventsCompact {
-			contentStr := resultContentString(e.Content)
+			contentStr = resultContentString(e.Content)
 			originalBytes = len(contentStr)
 			if cfg.ToolResultMaxBytes > 0 && originalBytes > cfg.ToolResultMaxBytes {
 				contentStr = contentStr[:cfg.ToolResultMaxBytes]
 				truncated = true
 			}
-			content, _ = json.Marshal(contentStr)
 		} else {
-			content = e.Content
-			originalBytes = len(content)
+			rawOutput = e.Content
+			contentStr = resultContentString(e.Content)
+			originalBytes = len(e.Content)
 		}
 
-		if cfg.ToolPayloadHardMax > 0 && len(content) > cfg.ToolPayloadHardMax {
-			content = truncateJSONPreview(content, cfg.ToolPayloadHardMax)
+		if cfg.ToolPayloadHardMax > 0 && len(contentStr) > cfg.ToolPayloadHardMax {
+			contentStr = contentStr[:cfg.ToolPayloadHardMax]
 			truncated = true
 		}
 
-		status := "completed"
-		if e.IsError {
-			status = "failed"
+		if cfg.ToolEvents == ToolEventsFull && cfg.ToolPayloadHardMax > 0 && len(rawOutput) > cfg.ToolPayloadHardMax {
+			rawOutput = truncateJSONPreview(rawOutput, cfg.ToolPayloadHardMax)
+			truncated = true
 		}
-		return acp.SessionUpdate{
+
+		content := buildToolCallContentArray(contentStr)
+
+		status := acp.ToolCallStatusCompleted
+		if e.IsError {
+			status = acp.ToolCallStatusFailed
+		}
+		meta := make(map[string]any)
+		if e.IsError {
+			meta["isError"] = true
+		}
+		if truncated {
+			meta["truncated"] = true
+			meta["originalBytes"] = originalBytes
+		}
+		update := acp.SessionUpdate{
 			SessionUpdate: "tool_call_update",
 			ToolCallID:    e.ToolUseID,
 			Status:        status,
-			IsError:       &e.IsError,
 			Content:       content,
-			Truncated:     truncated,
-			OriginalBytes: originalBytes,
-		}, true
+			Meta:          meta,
+		}
+		if rawOutput != nil {
+			update.RawOutput = rawOutput
+		}
+		return update, true
 
 	default:
 		return acp.SessionUpdate{}, false
 	}
+}
+
+func toolKind(name string) acp.ToolKind {
+	switch name {
+	case "Read":
+		return acp.ToolKindRead
+	case "Write", "Edit", "MultiEdit":
+		return acp.ToolKindEdit
+	case "Bash":
+		return acp.ToolKindExecute
+	case "Glob", "Grep", "Search":
+		return acp.ToolKindSearch
+	case "Delete", "FileDelete":
+		return acp.ToolKindDelete
+	case "Move", "Rename":
+		return acp.ToolKindMove
+	case "Think":
+		return acp.ToolKindThink
+	case "WebFetch", "Fetch":
+		return acp.ToolKindFetch
+	case "SwitchMode":
+		return acp.ToolKindSwitchMode
+	default:
+		return ""
+	}
+}
+
+func buildToolCallContentArray(text string) json.RawMessage {
+	result, _ := json.Marshal([]acp.ToolCallContent{
+		{
+			Type: "content",
+			Content: acp.ContentBlock{
+				Type: "text",
+				Text: text,
+			},
+		},
+	})
+	return result
 }
 
 func buildToolTitle(event claude.AssistantToolUseEvent) string {

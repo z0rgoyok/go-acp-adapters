@@ -166,10 +166,38 @@ type SessionUpdate struct {
 	Content       json.RawMessage `json:"content,omitempty"`
 	ToolCallID    string          `json:"toolCallId,omitempty"`
 	Title         string          `json:"title,omitempty"`
-	Kind          string          `json:"kind,omitempty"`
-	Status        string          `json:"status,omitempty"`
-	Input         json.RawMessage `json:"input,omitempty"`
-	IsError       *bool           `json:"isError,omitempty"`
-	Truncated     bool            `json:"truncated,omitempty"`
-	OriginalBytes int             `json:"originalBytes,omitempty"`
+	Kind          ToolKind        `json:"kind,omitempty"`
+	Status        ToolCallStatus  `json:"status,omitempty"`
+	RawInput      json.RawMessage `json:"rawInput,omitempty"`
+	RawOutput     json.RawMessage `json:"rawOutput,omitempty"`
+	Meta          map[string]any  `json:"_meta,omitempty"`
+}
+
+type ToolKind string
+
+const (
+	ToolKindRead       ToolKind = "read"
+	ToolKindEdit       ToolKind = "edit"
+	ToolKindDelete     ToolKind = "delete"
+	ToolKindMove       ToolKind = "move"
+	ToolKindSearch     ToolKind = "search"
+	ToolKindExecute    ToolKind = "execute"
+	ToolKindThink      ToolKind = "think"
+	ToolKindFetch      ToolKind = "fetch"
+	ToolKindSwitchMode ToolKind = "switch_mode"
+	ToolKindOther      ToolKind = "other"
+)
+
+type ToolCallStatus string
+
+const (
+	ToolCallStatusPending    ToolCallStatus = "pending"
+	ToolCallStatusInProgress ToolCallStatus = "in_progress"
+	ToolCallStatusCompleted  ToolCallStatus = "completed"
+	ToolCallStatusFailed     ToolCallStatus = "failed"
+)
+
+type ToolCallContent struct {
+	Type    string       `json:"type"`
+	Content ContentBlock `json:"content,omitempty"`
 }

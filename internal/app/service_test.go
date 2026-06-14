@@ -258,10 +258,10 @@ func TestPromptStreamsMultipleTranscriptTextEvents(t *testing.T) {
 	if notifier.updates[0].Update.SessionUpdate != "agent_message_chunk" || notifier.updates[0].Update.MessageID != "msg-1" {
 		t.Fatalf("update[0] = %+v", notifier.updates[0])
 	}
-	if notifier.updates[1].Update.SessionUpdate != "tool_call" || notifier.updates[1].Update.ToolCallID != "tool-1" || notifier.updates[1].Update.Kind != "Read" || notifier.updates[1].Update.Status != "started" {
+	if notifier.updates[1].Update.SessionUpdate != "tool_call" || notifier.updates[1].Update.ToolCallID != "tool-1" || notifier.updates[1].Update.Kind != acp.ToolKindRead || notifier.updates[1].Update.Status != acp.ToolCallStatusPending {
 		t.Fatalf("update[1] = %+v", notifier.updates[1])
 	}
-	if notifier.updates[2].Update.SessionUpdate != "tool_call_update" || notifier.updates[2].Update.ToolCallID != "tool-1" || notifier.updates[2].Update.Status != "completed" {
+	if notifier.updates[2].Update.SessionUpdate != "tool_call_update" || notifier.updates[2].Update.ToolCallID != "tool-1" || notifier.updates[2].Update.Status != acp.ToolCallStatusCompleted {
 		t.Fatalf("update[2] = %+v", notifier.updates[2])
 	}
 	if notifier.updates[3].Update.SessionUpdate != "agent_message_chunk" || notifier.updates[3].Update.MessageID != "msg-1" {

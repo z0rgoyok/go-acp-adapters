@@ -55,24 +55,24 @@ func TestUpdateFromTranscriptEvent_ToolCall(t *testing.T) {
 	if update.ToolCallID != "tool-1" {
 		t.Fatalf("toolCallId = %q", update.ToolCallID)
 	}
-	if update.Kind != "Read" {
+	if update.Kind != acp.ToolKindRead {
 		t.Fatalf("kind = %q", update.Kind)
 	}
-	if update.Status != "started" {
+	if update.Status != acp.ToolCallStatusPending {
 		t.Fatalf("status = %q", update.Status)
 	}
 	if update.Title != "Read /tmp/a.txt" {
 		t.Fatalf("title = %q", update.Title)
 	}
-	if update.Truncated {
-		t.Fatal("expected no truncation for small input")
+	if len(update.Meta) != 0 {
+		t.Fatal("expected no meta for non-truncated small input")
 	}
-	var input map[string]any
-	if err := json.Unmarshal(update.Input, &input); err != nil {
+	var rawInput map[string]any
+	if err := json.Unmarshal(update.RawInput, &rawInput); err != nil {
 		t.Fatal(err)
 	}
-	if input["file_path"] != "/tmp/a.txt" {
-		t.Fatalf("input = %+v", input)
+	if rawInput["file_path"] != "/tmp/a.txt" {
+		t.Fatalf("rawInput = %+v", rawInput)
 	}
 }
 
@@ -91,11 +91,12 @@ func TestUpdateFromTranscriptEvent_ToolCallCompactTruncation(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
-	if !update.Truncated {
-		t.Fatal("expected truncated=true")
+	meta := update.Meta
+	if meta == nil || meta["truncated"] != true {
+		t.Fatal("expected truncated=true in meta")
 	}
-	if update.OriginalBytes != len(longInput) {
-		t.Fatalf("originalBytes = %d, want %d", update.OriginalBytes, len(longInput))
+	if meta["originalBytes"] != len(longInput) {
+		t.Fatalf("originalBytes = %d, want %d", meta["originalBytes"], len(longInput))
 	}
 }
 
@@ -114,11 +115,12 @@ func TestUpdateFromTranscriptEvent_ToolCallHardLimit(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
-	if !update.Truncated {
-		t.Fatal("expected truncated=true due to hard limit")
+	meta := update.Meta
+	if meta == nil || meta["truncated"] != true {
+		t.Fatal("expected truncated=true in meta")
 	}
-	if update.OriginalBytes != len(longInput) {
-		t.Fatalf("originalBytes = %d, want %d", update.OriginalBytes, len(longInput))
+	if meta["originalBytes"] != len(longInput) {
+		t.Fatalf("originalBytes = %d, want %d", meta["originalBytes"], len(longInput))
 	}
 }
 
@@ -138,21 +140,27 @@ func TestUpdateFromTranscriptEvent_ToolResultCompleted(t *testing.T) {
 	if update.SessionUpdate != "tool_call_update" {
 		t.Fatalf("type = %q", update.SessionUpdate)
 	}
-	if update.Status != "completed" {
+	if update.Status != acp.ToolCallStatusCompleted {
 		t.Fatalf("status = %q", update.Status)
 	}
-	if update.IsError == nil || *update.IsError {
-		t.Fatal("isError should be false")
+	if update.Meta != nil && update.Meta["isError"] != nil {
+		t.Fatal("isError should be absent for non-error result")
 	}
 	if update.ToolCallID != "tool-1" {
 		t.Fatalf("toolCallId = %q", update.ToolCallID)
 	}
-	var contentStr string
-	if err := json.Unmarshal(update.Content, &contentStr); err != nil {
-		t.Fatal(err)
+	var contentBlocks []acp.ToolCallContent
+	if err := json.Unmarshal(update.Content, &contentBlocks); err != nil {
+		t.Fatalf("content should be ToolCallContent array: %v", err)
 	}
-	if contentStr != "file contents" {
-		t.Fatalf("content = %q", contentStr)
+	if len(contentBlocks) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(contentBlocks))
+	}
+	if contentBlocks[0].Type != "content" {
+		t.Fatalf("block type = %q", contentBlocks[0].Type)
+	}
+	if contentBlocks[0].Content.Type != "text" || contentBlocks[0].Content.Text != "file contents" {
+		t.Fatalf("block content = %+v", contentBlocks[0].Content)
 	}
 }
 
@@ -169,11 +177,11 @@ func TestUpdateFromTranscriptEvent_ToolResultFailed(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
-	if update.Status != "failed" {
+	if update.Status != acp.ToolCallStatusFailed {
 		t.Fatalf("status = %q, want failed", update.Status)
 	}
-	if update.IsError == nil || !*update.IsError {
-		t.Fatal("isError should be true")
+	if update.Meta == nil || update.Meta["isError"] != true {
+		t.Fatal("isError should be true in meta")
 	}
 }
 
@@ -192,11 +200,12 @@ func TestUpdateFromTranscriptEvent_ToolResultCompactTruncation(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
-	if !update.Truncated {
-		t.Fatal("expected truncated=true")
+	meta := update.Meta
+	if meta == nil || meta["truncated"] != true {
+		t.Fatal("expected truncated=true in meta")
 	}
-	if update.OriginalBytes != 100 {
-		t.Fatalf("originalBytes = %d, want 100", update.OriginalBytes)
+	if meta["originalBytes"] != 100 {
+		t.Fatalf("originalBytes = %d, want 100", meta["originalBytes"])
 	}
 }
 
@@ -215,12 +224,22 @@ func TestUpdateFromTranscriptEvent_ToolResultFullPreservesJSON(t *testing.T) {
 		t.Fatal("expected ok")
 	}
 
+	var tccs []acp.ToolCallContent
+	if err := json.Unmarshal(update.Content, &tccs); err != nil {
+		t.Fatalf("content should be ToolCallContent array: %v", err)
+	}
+	if len(tccs) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(tccs))
+	}
+	if update.RawOutput == nil {
+		t.Fatal("rawOutput should be set in full mode")
+	}
 	var blocks []map[string]any
-	if err := json.Unmarshal(update.Content, &blocks); err != nil {
-		t.Fatalf("content should be JSON array, got %s: %v", string(update.Content), err)
+	if err := json.Unmarshal(update.RawOutput, &blocks); err != nil {
+		t.Fatalf("rawOutput should be JSON array: %v", err)
 	}
 	if len(blocks) != 2 {
-		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+		t.Fatalf("expected 2 blocks in rawOutput, got %d", len(blocks))
 	}
 }
 
@@ -239,9 +258,19 @@ func TestUpdateFromTranscriptEvent_ToolResultFullPreservesObject(t *testing.T) {
 		t.Fatal("expected ok")
 	}
 
+	var tccs []acp.ToolCallContent
+	if err := json.Unmarshal(update.Content, &tccs); err != nil {
+		t.Fatalf("content should be ToolCallContent array: %v", err)
+	}
+	if len(tccs) != 1 || tccs[0].Content.Text != `{"result":"success","data":{"key":"value"}}` {
+		t.Fatalf("content = %+v", tccs)
+	}
+	if update.RawOutput == nil {
+		t.Fatal("rawOutput should be set in full mode")
+	}
 	var obj map[string]any
-	if err := json.Unmarshal(update.Content, &obj); err != nil {
-		t.Fatalf("content should be JSON object, got %s: %v", string(update.Content), err)
+	if err := json.Unmarshal(update.RawOutput, &obj); err != nil {
+		t.Fatalf("rawOutput should be JSON object: %v", err)
 	}
 	if obj["result"] != "success" {
 		t.Fatalf("result = %v", obj["result"])
@@ -264,11 +293,61 @@ func TestUpdateFromTranscriptEvent_ToolResultFullHardLimit(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
-	if !update.Truncated {
-		t.Fatal("expected truncated=true due to hard limit")
+	meta := update.Meta
+	if meta == nil || meta["truncated"] != true {
+		t.Fatal("expected truncated=true in meta")
 	}
-	if update.OriginalBytes != len(longContent) {
-		t.Fatalf("originalBytes = %d, want %d", update.OriginalBytes, len(longContent))
+	if meta["originalBytes"] != len(longContent) {
+		t.Fatalf("originalBytes = %d, want %d", meta["originalBytes"], len(longContent))
+	}
+	var contentBlocks []acp.ToolCallContent
+	if err := json.Unmarshal(update.Content, &contentBlocks); err != nil {
+		t.Fatal(err)
+	}
+	if len(contentBlocks) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(contentBlocks))
+	}
+	if len(contentBlocks[0].Content.Text) > scfg.ToolPayloadHardMax {
+		t.Fatalf("content text length %d exceeds hard limit", len(contentBlocks[0].Content.Text))
+	}
+	if update.RawOutput == nil {
+		t.Fatal("rawOutput should be set in full mode")
+	}
+}
+
+func TestUpdateFromTranscriptEvent_ToolResultCompactHardLimit(t *testing.T) {
+	scfg := SessionConfig{
+		ToolEvents:         ToolEventsCompact,
+		ToolResultMaxBytes: 200,
+		ToolPayloadHardMax: 50,
+	}
+
+	longContent := strings.Repeat("x", 100)
+	event := claude.ToolResultEvent{
+		ToolUseID: "tool-1",
+		Content:   json.RawMessage(`"` + longContent + `"`),
+		IsError:   false,
+	}
+	update, ok := updateFromTranscriptEvent(event, scfg)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	meta := update.Meta
+	if meta == nil || meta["truncated"] != true {
+		t.Fatal("expected truncated=true in meta")
+	}
+	var contentBlocks []acp.ToolCallContent
+	if err := json.Unmarshal(update.Content, &contentBlocks); err != nil {
+		t.Fatal(err)
+	}
+	if len(contentBlocks) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(contentBlocks))
+	}
+	if len(contentBlocks[0].Content.Text) > scfg.ToolPayloadHardMax {
+		t.Fatalf("content text length %d exceeds hard limit", len(contentBlocks[0].Content.Text))
+	}
+	if update.RawOutput != nil {
+		t.Fatal("rawOutput should be nil in compact mode")
 	}
 }
 

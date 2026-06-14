@@ -127,7 +127,7 @@ func TestACPProcessWithToolEvents(t *testing.T) {
 	m2 := client.read(t)
 	params2, _ := m2["params"].(map[string]any)
 	update2, _ := params2["update"].(map[string]any)
-	if update2["sessionUpdate"] != "tool_call" || update2["toolCallId"] != "tool-1" || update2["kind"] != "Read" || update2["status"] != "started" {
+	if update2["sessionUpdate"] != "tool_call" || update2["toolCallId"] != "tool-1" || update2["kind"] != "read" || update2["status"] != "pending" {
 		t.Fatalf("expected tool_call, got %+v", update2)
 	}
 
